@@ -1,0 +1,144 @@
+US Storm Data analysis and impacts to public health and economic consequences
+=============================================================================
+
+# Synopsis: 
+  The severe weather event data from NOAA for the years 1950 to 2011 has been analysed to study the impact of sever weather events on public health in terms of injuries and loss of life. This study also looks at the economic costs and consequences. 
+
+The source data is available [here] (https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).  The documentation about this is available at [storm data documentation] (https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
+The National Climatic Data Center Storm Events [FAQ] (https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+## Data Processing
+### 1.0 The storm from NOAA data is loaded and saved to the R project directory
+### 1.1 The compressed csv file is read in to memory
+### 1.2 Look at data summary
+
+```{r echo=TRUE, cache=TRUE }
+library(plyr)
+library(ggplot2)
+
+StormData <- read.csv("F:/R-Projects/reprodResearch-assign2/repdata-data-StormData.csv.bz2")
+summary(StormData)
+```
+
+Let us Look at the all column types in the StormData
+
+```{r echo=TRUE, cache=TRUE }
+str(StormData)
+```
+
+Let us look at the first 6 rows of the StormData
+```{r echo=TRUE}
+head(StormData)
+```
+Let us look at the last 6 rows of the StormData
+```{r echo=TRUE}
+tail(StormData)
+```
+
+### 2.1 Impact of severe weather on population
+First convert all EVTYPE to upper case, also convert FATALITIES & INJURIES columns to numeric
+```{r echo=TRUE, cache=TRUE}
+StormData$EVTYPE = toupper(StormData$EVTYPE)
+StormData$FATALITIES = as.numeric(StormData$FATALITIES)
+StormData$INJURIES = as.numeric(StormData$INJURIES)
+
+```
+
+Select only those rows where FATALITIES >0 or INJURIES > 0 
+
+```{r echo=TRUE}
+library(plyr)
+StormData$EVCOUNT = 1
+# fix all the differnt event type names used to simple buckets
+
+fixEvent = function(x) {
+  if (any(grepl("TORNADO",x))) e = "TORNADO"
+    else if (any(grepl("DROUGHT",x))) e = "DROUHGT"
+      else if (any(grepl("THUNDERSTORM|TSTM|LIGHTNING",x))) e = "THUNDERSTORM"  
+        else if (any(grepl("HURRICANE|TYPHOON|WATERSPOUT|FLOYD",x ))) e = "HURRICANE"
+          else if (any(grepl("ICE|HAIL|FREEZE|SLEET",x))) e = "ICE"
+            else if (any(grepl("SNOW|AVALANCHE|BLIZZARD|",x))) e = "SNOW"
+              else if (any(grepl("HEAT|TEMPERATURE",x))) e = "HEAT"
+                else if (any(grepl("STORM",x))) e = "STORM"
+                  else if (any(grepl("FLOOD",x))) e = "FLOOD"
+                    else if (any(grepl("COLD",x))) e = "COLD"
+                      else if (any(grepl("FIRE|",x))) e = "FIRE"
+                      else e = "OTHER"
+  e
+}
+
+StormData$EVTYPE = mapply(fixEvent, StormData$EVTYPE)
+popImpactByEvtype = ddply(StormData, "EVTYPE", summarize, TotalFatalities = sum(FATALITIES), TotalInjuries = sum(INJURIES), TotalEventCnt = sum(EVCOUNT)) 
+
+p1 = popImpactByEvtype[popImpactByEvtype$TotalFatalities > 0 | popImpactByEvtype$TotalInjuries > 0, ]
+
+p1$TotalImpacted = p1$TotalFatalities + p1$TotalInjuries
+```
+```{r echo=TRUE, cache=TRUE}
+
+mostImpacting = p1[order(-p1$TotalImpacted),]
+
+#mostImpacting
+```
+
+Calculate the Economic Impact by events
+
+```{r echo=TRUE}
+costMult = function (d, e) {
+  exp1 = toupper(substr(e,1,1))
+  if (exp1 == "K") multp = 1000
+  else if (exp1 =="M") multp = 1000000
+  else if (exp1 == "B") multp = 1e+09
+  else multp = 1
+  d * multp
+}
+
+StormEconImpact = StormData[StormData$PROPDMG != 0 | StormData$CROPDMG != 0,] 
+
+StormEconImpact$propdmg = mapply(costMult,StormEconImpact$PROPDMG, StormEconImpact$PROPDMGEXP)
+StormEconImpact$cropdmg = mapply(costMult,StormEconImpact$CROPDMG, StormEconImpact$CROPDMGEXP)
+
+StormEconDmg = StormEconImpact[,c(8,39,40)]
+StormEconDmg$TotalDamage =StormEconDmg$propdmg + StormEconDmg$cropdmg
+
+#head(StormEconDmg[order(-StormEconDmg$TotalDamage),])
+
+EconImpactByEvtype = ddply(StormEconDmg, "EVTYPE", summarize, TotalDamage = sum(TotalDamage), 
+                           TotalPropDamge = sum(propdmg), TotalCropDamage = sum(cropdmg)) 
+
+```
+## 3.0 Results
+
+Plot Total population impacted by the Event Type
+```{r echo=TRUE}
+library(ggplot2)
+qplot(p1$EVTYPE,p1$TotalImpacted, geom="histogram",xlab="Event Type", ylab="Total Impacted(Fatalities+Injured", main= "Total population impact (total fatalities + total injuries)")
+```
+Total Fatalities caused by Event Type
+
+```{r echo=TRUE}
+qplot(p1$EVTYPE,p1$TotalImpacted, geom="histogram",xlab="Event Type", ylab="Total Impacted(Fatalities+Injured", main= "Total population impact (total fatalities + total injuries)")
+```
+Total Injuries caused by Event Type
+```{r echo=TRUE}
+qplot(p1$EVTYPE,p1$TotalImpacted, geom="histogram",xlab="Event Type", ylab="Total Impacted(Fatalities+Injured", main= "Total population impact (total fatalities + total injuries)")
+```
+
+
+Now plot the data for Total Damage
+```{r echo=TRUE}
+library(ggplot2)
+qplot(EconImpactByEvtype$EVTYPE,EconImpactByEvtype$TotalDamage, geom="histogram",xlab="Event Type", ylab="Total Economic Impact(property damage + crop damage", main= "Total Economic impact (total property damage + total crop damage)")
+```
+
+Now plot the data for Total Property Damage
+```{r echo=TRUE}
+library(ggplot2)
+qplot(EconImpactByEvtype$EVTYPE,EconImpactByEvtype$TotalPropDamage, geom="histogram",xlab="Event Type", ylab="Total Property damage", main= "Total property damage")
+```
+
+Now plot the data for Total Crop Damage
+```{r echo=TRUE}
+library(ggplot2)
+qplot(EconImpactByEvtype$EVTYPE,EconImpactByEvtype$TotalCropDamage, geom="histogram",xlab="Event Type", ylab="Total Crop damage", main= "Total Crop damage")
+```
